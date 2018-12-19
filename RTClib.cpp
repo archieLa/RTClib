@@ -133,7 +133,7 @@ DateTime::DateTime (const char* date, const char* time) {
     yOff = conv2d(date + 9);
     // Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec 
     switch (date[0]) {
-        case 'J': m = (date[1] == 'a') ? 1 : ((date[2] == 'n') ? 6 : 7); break;
+        case 'J': m = date[1] == 'a' ? 1 : m = date[2] == 'n' ? 6 : 7; break;
         case 'F': m = 2; break;
         case 'A': m = date[2] == 'r' ? 4 : 8; break;
         case 'M': m = date[2] == 'r' ? 3 : 5; break;
@@ -158,7 +158,7 @@ DateTime::DateTime (const __FlashStringHelper* date, const __FlashStringHelper* 
     yOff = conv2d(buff + 9);
     // Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
     switch (buff[0]) {
-        case 'J': m = (buff[1] == 'a') ? 1 : ((buff[2] == 'n') ? 6 : 7); break;
+        case 'J': m = buff[1] == 'a' ? 1 : m = buff[2] == 'n' ? 6 : 7; break;
         case 'F': m = 2; break;
         case 'A': m = buff[2] == 'r' ? 4 : 8; break;
         case 'M': m = buff[2] == 'r' ? 3 : 5; break;
@@ -230,11 +230,20 @@ TimeSpan TimeSpan::operator-(const TimeSpan& right) {
   return TimeSpan(_seconds-right._seconds);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// RTC_DS1307 implementation
+
+
+
 
 static uint8_t bcd2bin (uint8_t val) { return val - 6 * (val >> 4); }
 static uint8_t bin2bcd (uint8_t val) { return val + 6 * (val / 10); }
+
+
+
+
+#if (RTC_USED == DS1307)
+
+////////////////////////////////////////////////////////////////////////////////
+// RTC_DS1307 implementation
 
 boolean RTC_DS1307::begin(void) {
   Wire.begin();
@@ -334,99 +343,8 @@ void RTC_DS1307::writenvram(uint8_t address, uint8_t data) {
   writenvram(address, &data, 1);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// RTC_Millis implementation
 
-long RTC_Millis::offset = 0;
-
-void RTC_Millis::adjust(const DateTime& dt) {
-    offset = dt.unixtime() - millis() / 1000;
-}
-
-DateTime RTC_Millis::now() {
-  return (uint32_t)(offset + millis() / 1000);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////
-// RTC_PCF8563 implementation
-
-boolean RTC_PCF8523::begin(void) {
-  Wire.begin();
-  return true;
-}
-
-boolean RTC_PCF8523::initialized(void) {
-  Wire.beginTransmission(PCF8523_ADDRESS);
-  Wire._I2C_WRITE((byte)PCF8523_CONTROL_3);
-  Wire.endTransmission();
-
-  Wire.requestFrom(PCF8523_ADDRESS, 1);
-  uint8_t ss = Wire._I2C_READ();
-  return ((ss & 0xE0) != 0xE0);
-}
-
-void RTC_PCF8523::adjust(const DateTime& dt) {
-  Wire.beginTransmission(PCF8523_ADDRESS);
-  Wire._I2C_WRITE((byte)3); // start at location 3
-  Wire._I2C_WRITE(bin2bcd(dt.second()));
-  Wire._I2C_WRITE(bin2bcd(dt.minute()));
-  Wire._I2C_WRITE(bin2bcd(dt.hour()));
-  Wire._I2C_WRITE(bin2bcd(dt.day()));
-  Wire._I2C_WRITE(bin2bcd(0)); // skip weekdays
-  Wire._I2C_WRITE(bin2bcd(dt.month()));
-  Wire._I2C_WRITE(bin2bcd(dt.year() - 2000));
-  Wire.endTransmission();
-
-  // set to battery switchover mode
-  Wire.beginTransmission(PCF8523_ADDRESS);
-  Wire._I2C_WRITE((byte)PCF8523_CONTROL_3);
-  Wire._I2C_WRITE((byte)0x00);
-  Wire.endTransmission();
-}
-
-DateTime RTC_PCF8523::now() {
-  Wire.beginTransmission(PCF8523_ADDRESS);
-  Wire._I2C_WRITE((byte)3);	
-  Wire.endTransmission();
-
-  Wire.requestFrom(PCF8523_ADDRESS, 7);
-  uint8_t ss = bcd2bin(Wire._I2C_READ() & 0x7F);
-  uint8_t mm = bcd2bin(Wire._I2C_READ());
-  uint8_t hh = bcd2bin(Wire._I2C_READ());
-  uint8_t d = bcd2bin(Wire._I2C_READ());
-  Wire._I2C_READ();  // skip 'weekdays'
-  uint8_t m = bcd2bin(Wire._I2C_READ());
-  uint16_t y = bcd2bin(Wire._I2C_READ()) + 2000;
-  
-  return DateTime (y, m, d, hh, mm, ss);
-}
-
-Pcf8523SqwPinMode RTC_PCF8523::readSqwPinMode() {
-  int mode;
-
-  Wire.beginTransmission(PCF8523_ADDRESS);
-  Wire._I2C_WRITE(PCF8523_CLKOUTCONTROL);
-  Wire.endTransmission();
-  
-  Wire.requestFrom((uint8_t)PCF8523_ADDRESS, (uint8_t)1);
-  mode = Wire._I2C_READ();
-
-  mode >>= 3;
-  mode &= 0x7;
-  return static_cast<Pcf8523SqwPinMode>(mode);
-}
-
-void RTC_PCF8523::writeSqwPinMode(Pcf8523SqwPinMode mode) {
-  Wire.beginTransmission(PCF8523_ADDRESS);
-  Wire._I2C_WRITE(PCF8523_CLKOUTCONTROL);
-  Wire._I2C_WRITE(mode << 3);
-  Wire.endTransmission();
-}
-
-
-
+#elif (RTC_USED == DS3231)
 
 ////////////////////////////////////////////////////////////////////////////////
 // RTC_DS3231 implementation
@@ -504,3 +422,179 @@ void RTC_DS3231::writeSqwPinMode(Ds3231SqwPinMode mode) {
 
   //Serial.println( read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL), HEX);
 }
+
+#elif (RTC_USED == PCF8523)
+
+////////////////////////////////////////////////////////////////////////////////
+// RTC_PCF8563 implementation
+
+boolean RTC_PCF8523::begin(void) {
+  Wire.begin();
+  return true;
+}
+
+RTC_PCF8523::BatteryStatus RTC_PCF8523::checkBatteryStatus()
+{
+  
+  BatteryStatus battStatus = BATT_NOT_VERIFIED;
+
+  if (initialized())
+  {
+    Wire.beginTransmission(PCF8523_ADDRESS);
+    Wire._I2C_WRITE((byte)PCF8523_CONTROL_3);
+    Wire.endTransmission();
+    
+    Wire.requestFrom(PCF8523_ADDRESS, 1);
+    if (!checkIfTimedOut())
+    {
+      uint8_t ss = Wire._I2C_READ();
+      if (ss & 0x04)
+      {
+        battStatus = BATT_LOW;
+      }
+      else
+      {
+        battStatus = BATT_OK;
+      }
+    }
+  }
+  
+  return battStatus;
+
+}
+
+boolean RTC_PCF8523::initialized(void) {
+  Wire.beginTransmission(PCF8523_ADDRESS);
+  Wire._I2C_WRITE((byte)PCF8523_CONTROL_3);
+  Wire.endTransmission();
+
+  Wire.requestFrom(PCF8523_ADDRESS, 1);
+  if (!checkIfTimedOut())
+  {
+    uint8_t ss = Wire._I2C_READ();
+    return ((ss & 0xE0) != 0xE0);
+  }
+  else
+  {
+    return false;
+  }
+
+}
+
+void RTC_PCF8523::adjust(const DateTime& dt) {
+  Wire.beginTransmission(PCF8523_ADDRESS);
+  Wire._I2C_WRITE((byte)3); // start at location 3
+  Wire._I2C_WRITE(bin2bcd(dt.second()));
+  Wire._I2C_WRITE(bin2bcd(dt.minute()));
+  Wire._I2C_WRITE(bin2bcd(dt.hour()));
+  Wire._I2C_WRITE(bin2bcd(dt.day()));
+  Wire._I2C_WRITE(bin2bcd(0)); // skip weekdays
+  Wire._I2C_WRITE(bin2bcd(dt.month()));
+  Wire._I2C_WRITE(bin2bcd(dt.year() - 2000));
+  Wire.endTransmission();
+
+  // set to battery switchover mode
+  Wire.beginTransmission(PCF8523_ADDRESS);
+  Wire._I2C_WRITE((byte)PCF8523_CONTROL_3);
+  Wire._I2C_WRITE((byte)0x00);
+  Wire.endTransmission();
+}
+
+boolean RTC_PCF8523::checkIfErrorPresent() const
+{
+  return mError;
+}
+
+
+DateTime RTC_PCF8523::now() {
+  Wire.beginTransmission(PCF8523_ADDRESS);
+  Wire._I2C_WRITE((byte)3);	
+  Wire.endTransmission();
+
+  uint8_t ss = 0;
+  uint8_t mm = 0;
+  uint8_t hh = 0;
+  uint8_t d = 0;
+  uint8_t m = 0;
+  uint16_t y = 0;
+  Wire.requestFrom(PCF8523_ADDRESS, 7);
+  if (!checkIfTimedOut())
+  {
+    ss = bcd2bin(Wire._I2C_READ() & 0x7F);
+    mm = bcd2bin(Wire._I2C_READ());
+    hh = bcd2bin(Wire._I2C_READ());
+    d = bcd2bin(Wire._I2C_READ());
+    Wire._I2C_READ();  // skip 'weekdays'
+    m = bcd2bin(Wire._I2C_READ());
+    y = bcd2bin(Wire._I2C_READ()) + 2000;
+  }
+
+  return DateTime (y, m, d, hh, mm, ss);
+}
+
+Pcf8523SqwPinMode RTC_PCF8523::readSqwPinMode() {
+  int mode = static_cast<int>(PCF8523_UNKNOWN);
+
+  Wire.beginTransmission(PCF8523_ADDRESS);
+  Wire._I2C_WRITE(PCF8523_CLKOUTCONTROL);
+  Wire.endTransmission();
+  
+  Wire.requestFrom((uint8_t)PCF8523_ADDRESS, (uint8_t)1);
+  if (checkIfTimedOut())
+  {
+    mode = Wire._I2C_READ();
+    mode >>= 3;
+    mode &= 0x7;
+  }
+
+  return static_cast<Pcf8523SqwPinMode>(mode);
+
+}
+
+void RTC_PCF8523::writeSqwPinMode(Pcf8523SqwPinMode mode) {
+  Wire.beginTransmission(PCF8523_ADDRESS);
+  Wire._I2C_WRITE(PCF8523_CLKOUTCONTROL);
+  Wire._I2C_WRITE(mode << 3);
+  Wire.endTransmission();
+}
+
+void RTC_PCF8523::setCommTimeoutMs(uint32_t timeout)
+{
+  mErrorTimeoutMs = timeout;
+}
+
+bool RTC_PCF8523::checkIfTimedOut()
+{
+  volatile uint32_t timerStart = millis();
+  volatile uint32_t currentTime = 0;
+  bool timedOut = true;
+  while (currentTime <= timerStart + mErrorTimeoutMs)
+  {
+    if (Wire.available())
+    {
+      timedOut = false;
+      mError = false;
+      break;
+    }
+    currentTime = millis();
+  }
+  mError = true;
+  return timedOut;
+}
+
+#endif
+
+////////////////////////////////////////////////////////////////////////////////
+// RTC_Millis implementation
+
+long RTC_Millis::offset = 0;
+
+void RTC_Millis::adjust(const DateTime& dt) {
+    offset = dt.unixtime() - millis() / 1000;
+}
+
+DateTime RTC_Millis::now() {
+  return (uint32_t)(offset + millis() / 1000);
+}
+
+/////////////////////////////////////////////////////////////////////////////////
